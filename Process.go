@@ -16,6 +16,9 @@ var nServers int           // qtde de outros processo
 var CliConn []*net.UDPConn // vetor com conexões para os servidores dos outros processos
 var ServConn *net.UDPConn  // conexão do meu servidor (onde recebo mensagens dos outros processos)
 
+var myId string
+var myClock int
+
 func CheckError(err error) {
 	if err != nil {
 		fmt.Println("Erro: ", err)
@@ -32,34 +35,47 @@ func PrintError(err error) {
 func doServerJob() {
 	// Ler (uma vez somente) da conexão UDP a mensagem
 	// Escreve na tela a msg recebida
-
 	buf := make([]byte, 1024) // Buffer de tamanho 1024
 
-	n, addr, err := ServConn.ReadFromUDP(buf)                  // Escuta a mensagem
-	fmt.Println("Received ", string(buf[0:n]), " from ", addr) // Imprime a mensagem lida
+	n, addr, err := ServConn.ReadFromUDP(buf) // Escuta a mensagem
 
+	// Atualizar clock
+	otherClock, _ := strconv.Atoi(string(buf[0:n]))
+
+	if myClock > otherClock {
+		myClock = myClock + 1
+	} else {
+		myClock = otherClock + 1
+	}
+
+	fmt.Println("Received ", string(buf[0:n]), " from ", addr) // Imprime a mensagem lida
+	fmt.Println("My new clock: ", myClock)
 	if err != nil {
 		fmt.Println("Error: ", err)
 	}
 }
 
-func doClientJob(otherProcess int, i int) {
-	// Envia uma mensagem (com valor i) para o servidor do processo
-	// otherServer
+func doClientJob(otherProcess int) {
+	// Envia uma mensagem para o servidor do processo otherServer
 
-	msg := strconv.Itoa(i)
+	msg := strconv.Itoa(myClock)
 	buf := []byte(msg)
-	_, err := CliConn[otherProcess].Write(buf) // Escreve no canal
+	_, err := CliConn[otherProcess-1].Write(buf) // Escreve no canal
 
 	if err != nil {
 		fmt.Println(msg, err)
+	} else {
+		fmt.Println("Sending my clock: ", myClock, " to Process ", otherProcess)
 	}
 
 	time.Sleep(time.Second * 1) // Espera 1 segundo
 }
 
 func initConnections() {
-	myPort = os.Args[1]
+	myId = os.Args[1]
+	ID, _ := strconv.Atoi(myId)
+	myPort = os.Args[ID+1]
+	myClock = 1
 	nServers = len(os.Args) - 2 // Tira o nome (no caso Process) e tira a primeira porta(que é a minha). As demais portas são dos outros processos
 
 	//	Outros códigos para deixar ok a conexão do meu servidor
@@ -115,6 +131,14 @@ func main() {
 		case x, valid := <-ch:
 			if valid {
 				fmt.Printf("Recebi do teclado: %s \n", x)
+
+				if x == myId {
+					myClock++
+					fmt.Println("Meu novo Clock: ", myClock)
+				} else {
+					x, _ := strconv.Atoi(x)
+					doClientJob(x)
+				}
 			} else {
 				fmt.Println("Channel closed!")
 			}
