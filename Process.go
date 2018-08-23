@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -82,8 +83,18 @@ func initConnections() {
 	}
 }
 
+func readInput(ch chan string) {
+	// Non-blocking async routine to listen for terminal input
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		text, _, _ := reader.ReadLine()
+		ch <- string(text)
+	}
+}
+
 func main() {
 	initConnections()
+	ch := make(chan string)
 
 	//O fechamento de conexões devem ficar aqui, assim só fecha
 	//conexão quando a main morrer
@@ -93,16 +104,25 @@ func main() {
 		defer CliConn[i].Close()
 	}
 	//Todo Process fará a mesma coisa: ouvir msg e mandar infinitos i’s para os outros processos
-	i := 0
 	for {
 		//Server
 		go doServerJob()
-		//Client
-		for j := 0; j < nServers; j++ {
-			go doClientJob(j, i)
+
+		go readInput(ch)
+
+		// When there is a request (from stdin). Do it!
+		select {
+		case x, valid := <-ch:
+			if valid {
+				fmt.Printf("Recebi do teclado: %s \n", x)
+			} else {
+				fmt.Println("Channel closed!")
+			}
+		default:
+			// Do nothing in the non-blocking approach.
+			time.Sleep(time.Second * 1)
 		}
 		// Wait a while
 		time.Sleep(time.Second * 1)
-		i++
 	}
 }
