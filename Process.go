@@ -22,20 +22,14 @@ var ID int
 var myClocks []int
 
 type jsonMSg struct {
-	myID string
-	setOfClocks  []int
+	MyId string
+	MyClocks  []int
 }
 
 func CheckError(err error) {
 	if err != nil {
 		fmt.Println("Erro: ", err)
 		os.Exit(0)
-	}
-}
-
-func PrintError(err error) {
-	if err != nil {
-		fmt.Println("Erro: ", err)
 	}
 }
 
@@ -51,38 +45,30 @@ func doServerJob() {
 	err = json.Unmarshal(buf[:n], &message)
 
 	fmt.Println("Received ", string(buf[0:n]), " from ", addr) // Imprime a mensagem lida
-	fmt.Println("Json: ", message)
-	//	fmt.Println("My new clock: ", myClock)
-	if err != nil {
-		fmt.Println("Error: ", err)
-	}
+	fmt.Println("Json: ", message.MyId)
+	fmt.Println("Json: ", message.MyClocks)
+	CheckError(err)
 }
 
 func doClientJob(otherProcess int) {
 	// Envia uma mensagem para o servidor do processo otherServer
+	msg := jsonMSg{ 
+					myId, 
+					myClocks, 
+				}
 
-	// Send registration information to server.
-	msg := jsonMSg{
-		myId,
-		myClocks,
-	}
-	jsonSerialized, err := json.Marshal(msg)
-	if err != nil {
-		fmt.Println("Marshal failed.")
-		return
-	}
+	jsonSerialized, err := json.Marshal(msg) // Serializar o JSON
+	CheckError(err)
+
 	_, err = CliConn[otherProcess -1].Write(jsonSerialized)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	CheckError(err)
 
 	time.Sleep(time.Second * 1) // Espera 1 segundo
 }
 
 func initConnections() {
 	myId = os.Args[1]
-	ID, _ := strconv.Atoi(myId)
+	ID, _ = strconv.Atoi(myId)
 	myPort = os.Args[ID+1]
 	nServers = len(os.Args) - 2 // Tira o nome (no caso Process) e tira a primeira porta(que é a minha). As demais portas são dos outros processos
 
@@ -108,11 +94,7 @@ func initConnections() {
 
 	// Inicia clocks
 	for i := 2; i < len(os.Args); i++ {
-		myClocks[i-1] = 1
-	}
-
-	for i := 2; i < len(os.Args); i++ {
-		fmt.Println(i-1,myClocks[i-1])
+		myClocks = append(myClocks, 1)
 	}
 }
 
@@ -150,10 +132,8 @@ func main() {
 				fmt.Printf("Recebi do teclado: %s \n", x)
 
 				if x == myId {
-					fmt.Println("aq")
-					myClocks[strconv.Atoi(myId)]++
-					fmt.Println("kkk")
-					fmt.Println("Meu novo Clock: ", myClocks[myId])
+					myClocks[ID-1]++
+					fmt.Println("Meu novo Clock: ", myClocks[ID-1])
 				} else {
 					x, _ := strconv.Atoi(x)
 					doClientJob(x)
