@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"bufio"
 	"fmt"
 	"net"
@@ -17,7 +18,13 @@ var CliConn []*net.UDPConn // vetor com conexões para os servidores dos outros 
 var ServConn *net.UDPConn  // conexão do meu servidor (onde recebo mensagens dos outros processos)
 
 var myId string
-var myClock int
+var ID int
+var myClocks []int
+
+type jsonMSg struct {
+	myID string
+	setOfClocks  []int
+}
 
 func CheckError(err error) {
 	if err != nil {
@@ -38,18 +45,14 @@ func doServerJob() {
 	buf := make([]byte, 1024) // Buffer de tamanho 1024
 
 	n, addr, err := ServConn.ReadFromUDP(buf) // Escuta a mensagem
+	CheckError(err)
 
-	// Atualizar clock
-	otherClock, _ := strconv.Atoi(string(buf[0:n]))
-
-	if myClock > otherClock {
-		myClock = myClock + 1
-	} else {
-		myClock = otherClock + 1
-	}
+	var message jsonMSg
+	err = json.Unmarshal(buf[:n], &message)
 
 	fmt.Println("Received ", string(buf[0:n]), " from ", addr) // Imprime a mensagem lida
-	fmt.Println("My new clock: ", myClock)
+	fmt.Println("Json: ", message)
+	//	fmt.Println("My new clock: ", myClock)
 	if err != nil {
 		fmt.Println("Error: ", err)
 	}
@@ -58,14 +61,20 @@ func doServerJob() {
 func doClientJob(otherProcess int) {
 	// Envia uma mensagem para o servidor do processo otherServer
 
-	msg := strconv.Itoa(myClock)
-	buf := []byte(msg)
-	_, err := CliConn[otherProcess-1].Write(buf) // Escreve no canal
-
+	// Send registration information to server.
+	msg := jsonMSg{
+		myId,
+		myClocks,
+	}
+	jsonSerialized, err := json.Marshal(msg)
 	if err != nil {
-		fmt.Println(msg, err)
-	} else {
-		fmt.Println("Sending my clock: ", myClock, " to Process ", otherProcess)
+		fmt.Println("Marshal failed.")
+		return
+	}
+	_, err = CliConn[otherProcess -1].Write(jsonSerialized)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
 
 	time.Sleep(time.Second * 1) // Espera 1 segundo
@@ -75,7 +84,6 @@ func initConnections() {
 	myId = os.Args[1]
 	ID, _ := strconv.Atoi(myId)
 	myPort = os.Args[ID+1]
-	myClock = 1
 	nServers = len(os.Args) - 2 // Tira o nome (no caso Process) e tira a primeira porta(que é a minha). As demais portas são dos outros processos
 
 	//	Outros códigos para deixar ok a conexão do meu servidor
@@ -83,7 +91,7 @@ func initConnections() {
 	CheckError(err)
 
 	ServConn, err = net.ListenUDP("udp", ServerAddr)
-	CheckError(err)
+	CheckError(	err)
 
 	//	Outros códigos para deixar ok as conexões com os servidores dos outros processos
 	for i := 2; i < len(os.Args); i++ {
@@ -96,6 +104,15 @@ func initConnections() {
 		Conn, err := net.DialUDP("udp", LocalAddr, ServerAddr)
 		CliConn = append(CliConn, Conn)
 		CheckError(err)
+	}
+
+	// Inicia clocks
+	for i := 2; i < len(os.Args); i++ {
+		myClocks[i-1] = 1
+	}
+
+	for i := 2; i < len(os.Args); i++ {
+		fmt.Println(i-1,myClocks[i-1])
 	}
 }
 
@@ -133,8 +150,10 @@ func main() {
 				fmt.Printf("Recebi do teclado: %s \n", x)
 
 				if x == myId {
-					myClock++
-					fmt.Println("Meu novo Clock: ", myClock)
+					fmt.Println("aq")
+					myClocks[strconv.Atoi(myId)]++
+					fmt.Println("kkk")
+					fmt.Println("Meu novo Clock: ", myClocks[myId])
 				} else {
 					x, _ := strconv.Atoi(x)
 					doClientJob(x)
@@ -146,6 +165,8 @@ func main() {
 			// Do nothing in the non-blocking approach.
 			time.Sleep(time.Second * 1)
 		}
+
+
 		// Wait a while
 		time.Sleep(time.Second * 1)
 	}
