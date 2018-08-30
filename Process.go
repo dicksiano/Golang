@@ -33,6 +33,13 @@ func CheckError(err error) {
 	}
 }
 
+func MaxFunc(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func doServerJob() {
 	// Ler (uma vez somente) da conexão UDP a mensagem
 	// Escreve na tela a msg recebida
@@ -43,22 +50,32 @@ func doServerJob() {
 
 	var message jsonMSg
 	err = json.Unmarshal(buf[:n], &message)
-
-	fmt.Println("Received ", string(buf[0:n]), " from ", addr) // Imprime a mensagem lida
-	fmt.Println("Json: ", message.MyId)
-	fmt.Println("Json: ", message.MyClocks)
 	CheckError(err)
+
+	fmt.Println("Received ", string(buf[0:n]), " from ", addr, "Process ", message.MyId) // Imprime a mensagem lida
+	
+	for i := 0; i < len(message.MyClocks); i++ {
+		myClocks[i] = MaxFunc( myClocks[i],  message.MyClocks[i] )
+	}
+	myClocks[ID-1]++;
+
+	fmt.Println("Meu vetor de Clocks: ", myClocks)
 }
 
 func doClientJob(otherProcess int) {
+	// Atualizar meu clock antes de enviar a mensagem
+	myClocks[ID-1]++;
+
 	// Envia uma mensagem para o servidor do processo otherServer
-	msg := jsonMSg{ 
+	msg := jsonMSg { 
 					myId, 
 					myClocks, 
 				}
 
 	jsonSerialized, err := json.Marshal(msg) // Serializar o JSON
 	CheckError(err)
+
+	fmt.Println("Meu vetor de Clocks enviado: ", myClocks)
 
 	_, err = CliConn[otherProcess -1].Write(jsonSerialized)
 	CheckError(err)
@@ -94,7 +111,7 @@ func initConnections() {
 
 	// Inicia clocks
 	for i := 2; i < len(os.Args); i++ {
-		myClocks = append(myClocks, 1)
+		myClocks = append(myClocks, 0)
 	}
 }
 
@@ -133,7 +150,7 @@ func main() {
 
 				if x == myId {
 					myClocks[ID-1]++
-					fmt.Println("Meu novo Clock: ", myClocks[ID-1])
+					fmt.Println("Meu vetor de Clocks: ", myClocks)
 				} else {
 					x, _ := strconv.Atoi(x)
 					doClientJob(x)
