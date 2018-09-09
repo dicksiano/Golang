@@ -16,14 +16,23 @@ var myPort string          // porta do meu servidor
 var nServers int           // qtde de outros processo
 var CliConn []*net.UDPConn // vetor com conexões para os servidores dos outros processos
 var ServConn *net.UDPConn  // conexão do meu servidor (onde recebo mensagens dos outros processos)
+var CriticalSessionConn *net.UDPConn // vetor com conexões para os servidores dos outros processos
 
-var myId string
 var ID int
-var myClocks []int
+var myClock int
+var state string
+var numOfReplies int
+var requestQueue []request
 
 type jsonMSg struct {
-	MyId string
-	MyClocks  []int
+	MyId int
+	MyClock int
+	MyMsg string
+}
+
+type request struct {
+	Id int
+	Clock int
 }
 
 func CheckError(err error) {
@@ -34,15 +43,13 @@ func CheckError(err error) {
 }
 
 func MaxFunc(a int, b int) int {
-	if a > b {
-		return a
-	}
+	if a > b { return a }
 	return b
 }
 
 func doServerJob() {
+
 	// Ler (uma vez somente) da conexão UDP a mensagem
-	// Escreve na tela a msg recebida
 	buf := make([]byte, 1024) // Buffer de tamanho 1024
 
 	n, addr, err := ServConn.ReadFromUDP(buf) // Escuta a mensagem
@@ -52,30 +59,31 @@ func doServerJob() {
 	err = json.Unmarshal(buf[:n], &message)
 	CheckError(err)
 
-	fmt.Println("Received ", string(buf[0:n]), " from ", addr, "Process ", message.MyId) // Imprime a mensagem lida
-	
-	for i := 0; i < len(message.MyClocks); i++ {
-		myClocks[i] = MaxFunc( myClocks[i],  message.MyClocks[i] )
-	}
-	myClocks[ID-1]++;
+	fmt.Println("Received ", string(buf[0:n]), " from ", addr, " - Process ", message.MyId) // Imprime a mensagem lida
 
-	fmt.Println("Meu vetor de Clocks: ", myClocks)
+	if message.MyMsg == "Request" {
+		processRequest(message.MyId, message.MyClock);	
+	} else if message.MyMsg == "Reply"{
+		processReply()
+	}
+
+	// Atualiza clock
+	myClock = 1 + MaxFunc(myClock, message.MyClock)
 }
 
-func doClientJob(otherProcess int) {
-	// Atualizar meu clock antes de enviar a mensagem
-	myClocks[ID-1]++;
-
+func doClientJob(otherProcess int, content string) {	
+	// Atualiza clock
+	myClock++
+	
 	// Envia uma mensagem para o servidor do processo otherServer
 	msg := jsonMSg { 
-					myId, 
-					myClocks, 
+					ID, 
+					myClock, 
+					content,
 				}
 
 	jsonSerialized, err := json.Marshal(msg) // Serializar o JSON
 	CheckError(err)
-
-	fmt.Println("Meu vetor de Clocks enviado: ", myClocks)
 
 	_, err = CliConn[otherProcess -1].Write(jsonSerialized)
 	CheckError(err)
@@ -84,8 +92,7 @@ func doClientJob(otherProcess int) {
 }
 
 func initConnections() {
-	myId = os.Args[1]
-	ID, _ = strconv.Atoi(myId)
+	ID, _ = strconv.Atoi(os.Args[1])
 	myPort = os.Args[ID+1]
 	nServers = len(os.Args) - 2 // Tira o nome (no caso Process) e tira a primeira porta(que é a minha). As demais portas são dos outros processos
 
@@ -109,10 +116,24 @@ func initConnections() {
 		CheckError(err)
 	}
 
+	// Conectando com o recurso compartilhado
+	ServerAddr, err = net.ResolveUDPAddr("udp", ":10001")
+	CheckError(err)
+
+	LocalAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	CheckError(err)
+
+	CriticalSessionConn, err = net.DialUDP("udp", LocalAddr, ServerAddr)
+	CheckError(err)
+
 	// Inicia clocks
-	for i := 2; i < len(os.Args); i++ {
-		myClocks = append(myClocks, 0)
-	}
+	myClock = 0
+
+	// Inicia estado
+	state = "RELEASED"
+
+	// Inicia fila de requisições
+	requestQueue = make([]request, 0)
 }
 
 func readInput(ch chan string) {
@@ -122,6 +143,36 @@ func readInput(ch chan string) {
 		text, _, _ := reader.ReadLine()
 		ch <- string(text)
 	}
+}
+
+func requestCriticalSession() {
+	state = "WANTED"
+	for i := 0; i < len(CliConn); i++ {
+		if i+1 != ID { doClientJob(i + 1, "Request") }
+	}
+}
+
+func processReply() {
+	numOfReplies++;
+	if numOfReplies == nServers {
+		numOfReplies = 0
+		accessCriticalSession()
+	}
+}
+
+func processRequest(id int, clock int) {
+	if state == "HELD" || (state == "WANTED" && myClock < clock) {
+		requestQueue = append(requestQueue, request {id, clock})
+	} else {
+		doClientJob(id, "Reply")
+	}
+}
+
+func accessCriticalSession() {
+	state = "HELD"
+	fmt.Println("Entrando na CS")
+	time.Sleep(time.Second * 20)
+	fmt.Println("Saindo da CS")
 }
 
 func main() {
@@ -148,12 +199,16 @@ func main() {
 			if valid {
 				fmt.Printf("Recebi do teclado: %s \n", x)
 
-				if x == myId {
-					myClocks[ID-1]++
-					fmt.Println("Meu vetor de Clocks: ", myClocks)
+				if x == strconv.Itoa(ID) {
+					myClock++
+					fmt.Println("Meu Clock: ", myClock)
 				} else {
-					x, _ := strconv.Atoi(x)
-					doClientJob(x)
+					if state == "RELEASED" {
+						fmt.Println("Solicitando recurso compartilhado!")
+						requestCriticalSession()
+					} else {
+						fmt.Println(x, "ignorado. Processo está no estado: ", state)
+					}
 				}
 			} else {
 				fmt.Println("Channel closed!")
@@ -162,7 +217,6 @@ func main() {
 			// Do nothing in the non-blocking approach.
 			time.Sleep(time.Second * 1)
 		}
-
 
 		// Wait a while
 		time.Sleep(time.Second * 1)
