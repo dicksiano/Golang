@@ -61,20 +61,20 @@ func doServerJob() {
 
 	fmt.Println("Received ", string(buf[0:n]), " from ", addr, " - Process ", message.MyId) // Imprime a mensagem lida
 
+	// Atualiza clock
+	myClock = 1 + MaxFunc(myClock, message.MyClock)
+
 	if message.MyMsg == "Request" {
 		processRequest(message.MyId, message.MyClock);	
 	} else if message.MyMsg == "Reply"{
 		processReply()
 	}
-
-	// Atualiza clock
-	myClock = 1 + MaxFunc(myClock, message.MyClock)
 }
 
 func doClientJob(otherProcess int, content string) {	
 	// Atualiza clock
 	myClock++
-	
+
 	// Envia uma mensagem para o servidor do processo otherServer
 	msg := jsonMSg { 
 					ID, 
@@ -103,12 +103,12 @@ func initConnections() {
 	ServConn, err = net.ListenUDP("udp", ServerAddr)
 	CheckError(	err)
 
+	LocalAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	CheckError(err)
+
 	//	Outros códigos para deixar ok as conexões com os servidores dos outros processos
 	for i := 2; i < len(os.Args); i++ {
 		ServerAddr, err := net.ResolveUDPAddr("udp", os.Args[i])
-		CheckError(err)
-
-		LocalAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 		CheckError(err)
 
 		Conn, err := net.DialUDP("udp", LocalAddr, ServerAddr)
@@ -118,9 +118,6 @@ func initConnections() {
 
 	// Conectando com o recurso compartilhado
 	ServerAddr, err = net.ResolveUDPAddr("udp", ":10001")
-	CheckError(err)
-
-	LocalAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	CheckError(err)
 
 	CriticalSessionConn, err = net.DialUDP("udp", LocalAddr, ServerAddr)
@@ -154,7 +151,7 @@ func requestCriticalSession() {
 
 func processReply() {
 	numOfReplies++;
-	if numOfReplies == nServers {
+	if numOfReplies == nServers-1 {
 		numOfReplies = 0
 		accessCriticalSession()
 	}
@@ -171,8 +168,24 @@ func processRequest(id int, clock int) {
 func accessCriticalSession() {
 	state = "HELD"
 	fmt.Println("Entrando na CS")
+
+	msg := "Processo: " + strconv.Itoa(ID) + " - " + "Clock: " + strconv.Itoa(myClock) + " na CS"
+	buf := []byte(msg)
+	_, err := CriticalSessionConn.Write(buf)
+	CheckError(err)
+
 	time.Sleep(time.Second * 20)
 	fmt.Println("Saindo da CS")
+
+	state = "RELEASED"
+	clearQueue()
+}
+
+func clearQueue() {
+	for len(requestQueue) > 0 {
+		doClientJob(requestQueue[0].Id, "Reply")
+		requestQueue = requestQueue[1:] // Deque
+	}
 }
 
 func main() {
