@@ -1,4 +1,6 @@
 # Golang
 Learninig Go!
 
-![Screenshot](gopher.png)
+<p align="center">
+<img src=gopher.png>
+</p>
