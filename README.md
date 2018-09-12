@@ -1,4 +1,4 @@
 # Golang
 Learninig Go!
 
-![Screenshot](fig.png)
+![Screenshot](gopher.png)
